@@ -1,0 +1,78 @@
+version: '3.8'
+
+services:
+  # MongoDB 資料庫服務
+  mongodb:
+    image: mongo:7.0
+    container_name: sketchfab-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-admin123}
+      MONGO_INITDB_DATABASE: ${MONGODB_DATABASE:-sketchfab_data}
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - sketchfab-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Sketchfab 資料擷取應用程式
+  fetch-sketchfab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sketchfab-fetcher
+    restart: unless-stopped
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      # MongoDB 設定
+      MONGODB_URI: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongodb:27017/${MONGODB_DATABASE:-sketchfab_data}?authSource=admin
+      MONGODB_DATABASE: ${MONGODB_DATABASE:-sketchfab_data}
+      MONGODB_TIMEOUT: ${MONGODB_TIMEOUT:-10}
+
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - sketchfab-network
+
+  # MongoDB Express 網頁管理介面
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: sketchfab-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD:-admin123}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME:-admin}:${MONGO_ROOT_PASSWORD:-admin123}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - sketchfab-network
+    profiles:
+      - admin
+
+# 網路設定
+networks:
+  sketchfab-network:
+    driver: bridge
+
+# 磁碟區設定
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
