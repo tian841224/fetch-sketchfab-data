@@ -153,10 +153,113 @@ func (s *ModelsService) GetModelsCount() (int64, error) {
 	return count, nil
 }
 
+// UpsertResult 表示 upsert 操作的結果
+type UpsertResult struct {
+	InsertedCount  int64 `json:"inserted_count"`
+	UpdatedCount   int64 `json:"updated_count"`
+	UnchangedCount int64 `json:"unchanged_count"`
+}
+
+// UpsertModels - 只在資料有變化時才更新
+func (s *ModelsService) UpsertModels(models []*SketchfabModel) (*UpsertResult, error) {
+	if len(models) == 0 {
+		return &UpsertResult{}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	result := &UpsertResult{}
+	var operations []mongo.WriteModel
+
+	for _, model := range models {
+		// 檢查現有資料
+		var existingModel SketchfabModel
+		err := s.collection.FindOne(ctx, bson.M{"_id": model.ID}).Decode(&existingModel)
+
+		if err == mongo.ErrNoDocuments {
+			// 資料不存在，準備插入
+			model.FetchedAt = time.Now()
+
+			operation := mongo.NewUpdateOneModel()
+			operation.SetFilter(bson.M{"_id": model.ID})
+			operation.SetUpdate(bson.M{"$set": model})
+			operation.SetUpsert(true)
+
+			operations = append(operations, operation)
+			result.InsertedCount++
+
+		} else if err == nil {
+			// 資料存在，檢查是否需要更新
+			if s.shouldUpdateModel(&existingModel, model) {
+				// 保留原始建立時間
+				model.CreatedAt = existingModel.CreatedAt
+				model.FetchedAt = time.Now()
+
+				operation := mongo.NewUpdateOneModel()
+				operation.SetFilter(bson.M{"_id": model.ID})
+				operation.SetUpdate(bson.M{"$set": model})
+
+				operations = append(operations, operation)
+				result.UpdatedCount++
+			} else {
+				// 資料沒有變化，只更新取得時間
+				operation := mongo.NewUpdateOneModel()
+				operation.SetFilter(bson.M{"_id": model.ID})
+				operation.SetUpdate(bson.M{"$set": bson.M{"fetched_at": time.Now()}})
+
+				operations = append(operations, operation)
+				result.UnchangedCount++
+			}
+		} else {
+			return nil, fmt.Errorf("檢查現有模型失敗: %v", err)
+		}
+	}
+
+	// 執行批次操作
+	if len(operations) > 0 {
+		_, err := s.collection.BulkWrite(ctx, operations)
+		if err != nil {
+			return nil, fmt.Errorf("批次 upsert 失敗: %v", err)
+		}
+	}
+
+	return result, nil
+}
+
+// shouldUpdateModel 判斷模型是否需要更新
+func (s *ModelsService) shouldUpdateModel(existing, new *SketchfabModel) bool {
+	// 檢查關鍵欄位是否有變化
+	if existing.Name != new.Name ||
+		existing.Description != new.Description ||
+		existing.ViewCount != new.ViewCount ||
+		existing.LikeCount != new.LikeCount ||
+		existing.IsDownloadable != new.IsDownloadable {
+		return true
+	}
+
+	// 檢查更新時間
+	if !existing.UpdatedAt.Equal(new.UpdatedAt) {
+		return true
+	}
+
+	// 檢查標籤數量變化
+	if len(existing.Tags) != len(new.Tags) {
+		return true
+	}
+
+	// 檢查分類數量變化
+	if len(existing.Categories) != len(new.Categories) {
+		return true
+	}
+
+	return false
+}
+
 // ConvertAndSaveModelsResponse 將API回應轉換為資料庫模型並儲存
-func (s *ModelsService) ConvertAndSaveModelsResponse(response *models.ModelsResponse) error {
+func (s *ModelsService) ConvertAndSaveModelsResponse(response *models.ModelsResponse) (*UpsertResult, error) {
 	if response == nil || len(response.Results) == 0 {
-		return fmt.Errorf("回應為空或沒有模型資料")
+		return nil, fmt.Errorf("回應為空或沒有模型資料")
 	}
 
 	// 轉換API模型為資料庫模型
@@ -236,6 +339,5 @@ func (s *ModelsService) ConvertAndSaveModelsResponse(response *models.ModelsResp
 		dbModels = append(dbModels, dbModel)
 	}
 
-	// 批次儲存模型
-	return s.SaveModels(dbModels)
+	return s.UpsertModels(dbModels)
 }
