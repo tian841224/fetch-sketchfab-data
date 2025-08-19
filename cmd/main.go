@@ -52,6 +52,13 @@ func main() {
 		}
 	}()
 
+	// 建立日誌服務
+	logService := service.NewLogService(cfg.Logstash.Host, cfg.Logstash.Port, "sketchfab-fetcher")
+	defer logService.Close()
+
+	// 輸出啟動訊息到標準輸出
+	fmt.Printf("⏰ 啟動每日排程模式，執行時間: %s\n", *scheduleTime)
+
 	// 建立模型服務
 	modelsService := service.NewModelsService(mongoClient)
 
@@ -61,59 +68,61 @@ func main() {
 	// 根據模式執行
 	switch *mode {
 	case "once":
-		fmt.Println("🔧 執行單次同步...")
-		err = runOnce(client, modelsService)
+		logService.Info("🔧 執行單次同步...")
+		err = runOnce(client, modelsService, logService)
 		if err != nil {
+			logService.Error(fmt.Sprintf("單次執行失敗: %v", err))
 			log.Fatalf("單次執行失敗: %v", err)
 		}
-		fmt.Println("✅ 單次執行完成!")
+		logService.Info("✅ 單次執行完成!")
 
 	case "schedule":
-		fmt.Printf("⏰ 啟動每日排程模式，執行時間: %s\n", *scheduleTime)
-		err = runScheduler(client, modelsService, *scheduleTime)
+		logService.Info(fmt.Sprintf("⏰ 啟動每日排程模式，執行時間: %s", *scheduleTime))
+		err = runScheduler(client, modelsService, logService, *scheduleTime)
 		if err != nil {
+			logService.Error(fmt.Sprintf("排程器執行失敗: %v", err))
 			log.Fatalf("排程器執行失敗: %v", err)
 		}
 	}
 }
 
 // runOnce 執行單次同步
-func runOnce(client *api.SketchfabClient, modelsService *service.ModelsService) error {
+func runOnce(client *api.SketchfabClient, modelsService *service.ModelsService, logService *service.LogService) error {
 	response, err := client.GetDownloadableModels()
 	if err != nil {
+		logService.Error(fmt.Sprintf("API呼叫失敗: %v", err))
 		return fmt.Errorf("API呼叫失敗: %v", err)
 	}
 
-	fmt.Printf("📥 成功取得 %d 個模型資料\n", len(response.Results))
+	logService.Info(fmt.Sprintf("📥 成功取得 %d 個模型資料", len(response.Results)))
 
 	// 將API回應儲存到資料庫
-	fmt.Println("正在將模型資料儲存到資料庫...")
+	logService.Info("正在將模型資料儲存到資料庫...")
 	upsertResult, err := modelsService.ConvertAndSaveModelsResponse(response)
 	if err != nil {
+		logService.Error(fmt.Sprintf("儲存模型資料失敗: %v", err))
 		return fmt.Errorf("儲存模型資料失敗: %v", err)
 	}
 
 	// 顯示 upsert 統計結果
-	fmt.Printf("📊 處理統計:\n")
-	fmt.Printf("   ✅ 新增: %d 個模型\n", upsertResult.InsertedCount)
-	fmt.Printf("   🔄 更新: %d 個模型\n", upsertResult.UpdatedCount)
-	fmt.Printf("   ⏭️  無變化: %d 個模型\n", upsertResult.UnchangedCount)
+	logService.Info(fmt.Sprintf("📊 處理統計: 新增=%d, 更新=%d, 無變化=%d",
+		upsertResult.InsertedCount, upsertResult.UpdatedCount, upsertResult.UnchangedCount))
 
 	// 顯示資料庫統計
 	totalCount, err := modelsService.GetModelsCount()
 	if err != nil {
-		log.Printf("取得模型總數失敗: %v", err)
+		logService.Error(fmt.Sprintf("取得模型總數失敗: %v", err))
 	} else {
-		fmt.Printf("💾 資料庫中的模型總數: %d\n", totalCount)
+		logService.Info(fmt.Sprintf("💾 資料庫中的模型總數: %d", totalCount))
 	}
 
 	return nil
 }
 
 // runScheduler 執行排程器模式
-func runScheduler(client *api.SketchfabClient, modelsService *service.ModelsService, scheduleTime string) error {
+func runScheduler(client *api.SketchfabClient, modelsService *service.ModelsService, logService *service.LogService, scheduleTime string) error {
 	// 建立每日排程器
-	dailyScheduler := scheduler.NewDailyScheduler(client, modelsService, scheduleTime)
+	dailyScheduler := scheduler.NewDailyScheduler(client, modelsService, logService, scheduleTime)
 
 	// 建立 context 和信號處理
 	ctx, cancel := context.WithCancel(context.Background())
@@ -132,11 +141,12 @@ func runScheduler(client *api.SketchfabClient, modelsService *service.ModelsServ
 	// 等待信號或錯誤
 	select {
 	case <-sigChan:
-		log.Println("收到停止信號，正在關閉...")
+		logService.Info("收到停止信號，正在關閉...")
 		dailyScheduler.Stop()
 		cancel()
 		return nil
 	case err := <-errChan:
+		logService.Error(fmt.Sprintf("排程器錯誤: %v", err))
 		return err
 	}
 }
