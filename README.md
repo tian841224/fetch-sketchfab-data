@@ -61,9 +61,15 @@ go build -o fetch-sketchfab cmd/main.go
 ### 2. 使用 Docker 執行
 
 #### 啟動服務 (包含 MongoDB 管理介面)
-啟動所有服務，包括 MongoDB 和 MongoDB Express：
+啟動所有服務，包括 MongoDB、MongoDB Express 和 ELK 堆疊：
 ```bash
 docker-compose --profile admin up -d
+```
+
+#### 啟動基本服務 (不含管理介面)
+啟動核心服務，包括 MongoDB 和 ELK 堆疊：
+```bash
+docker-compose up -d
 ```
 
 #### 單次執行
@@ -87,7 +93,7 @@ services:
   fetch-sketchfab:
     # 註解掉單次模式
     # command: ["-mode=once"]
-    
+
     # 啟用排程模式
     command: ["-mode=schedule", "-time=09:00"]
 ```
@@ -107,14 +113,33 @@ docker-compose up -d fetch-sketchfab
 
 ### Sketchfab 擷取服務
 - **容器名稱**：`sketchfab-fetcher`
-- **相依性**：等待 MongoDB 健康檢查通過後啟動
-- **日誌儲存**：儲存於 `./logs` 目錄
+- **相依性**：等待 MongoDB 和 Logstash 健康檢查通過後啟動
+- **日誌儲存**：儲存於 `./logs` 目錄，同時發送到 Logstash
 
 ### MongoDB Express (管理介面)
 - **容器名稱**：`sketchfab-mongo-express`
 - **連接埠**：`8081`
 - **存取網址**：`http://localhost:8081`
 - **啟用方式**：使用 `--profile admin` 參數
+
+### ELK 堆疊服務
+
+#### Elasticsearch
+- **容器名稱**：`sketchfab-elasticsearch`
+- **連接埠**：`9200` (HTTP API), `9300` (節點通訊)
+- **存取網址**：`http://localhost:9200`
+- **叢集狀態**：`http://localhost:9200/_cluster/health`
+
+#### Logstash
+- **容器名稱**：`sketchfab-logstash`
+- **連接埠**：`5000` (TCP/UDP), `5044` (Beats), `9600` (API)
+- **功能**：接收應用程式日誌，處理後發送到 Elasticsearch
+
+#### Kibana
+- **容器名稱**：`sketchfab-kibana`
+- **連接埠**：`5601`
+- **存取網址**：`http://localhost:5601`
+- **功能**：提供日誌查詢、視覺化和監控介面
 
 ---
 

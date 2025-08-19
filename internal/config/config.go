@@ -8,8 +8,9 @@ import (
 
 // Config 應用程式設定結構
 type Config struct {
-	MongoDB MongoDBConfig `json:"mongodb"`
-	API     APIConfig     `json:"api"`
+	MongoDB  MongoDBConfig  `json:"mongodb"`
+	API      APIConfig      `json:"api"`
+	Logstash LogstashConfig `json:"logstash"`
 }
 
 // MongoDBConfig MongoDB設定
@@ -24,6 +25,12 @@ type APIConfig struct {
 	SketchfabAPIKey string `json:"sketchfab_api_key"`
 }
 
+// LogstashConfig Logstash設定
+type LogstashConfig struct {
+	Host string `json:"host"`
+	Port string `json:"port"`
+}
+
 // LoadConfig 載入設定
 func LoadConfig() *Config {
 	config := &Config{
@@ -34,6 +41,10 @@ func LoadConfig() *Config {
 		},
 		API: APIConfig{
 			SketchfabAPIKey: getEnvOrDefault("SKETCHFAB_API_KEY", ""),
+		},
+		Logstash: LogstashConfig{
+			Host: getEnvOrDefault("LOGSTASH_HOST", "localhost"),
+			Port: getEnvOrDefault("LOGSTASH_PORT", "5000"),
 		},
 	}
 
