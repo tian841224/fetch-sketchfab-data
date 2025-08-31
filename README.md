@@ -7,19 +7,11 @@
 - **每日排程**：每天在指定時間自動執行資料同步。
 
 ---
-此程式支援以下兩種執行模式：
-- **單次執行**：立即執行一次資料同步。
-- **每日排程**：每天在指定時間自動執行資料同步。
-
----
 
 ## 📋 使用方式
 
 ### 1. 直接執行 (Go 程式)
-### 1. 直接執行 (Go 程式)
 
-#### 單次執行
-立即執行一次資料同步：
 #### 單次執行
 立即執行一次資料同步：
 ```bash
@@ -28,41 +20,29 @@ go run cmd/main.go
 
 #### 每日排程執行
 設定每天在指定時間執行資料同步：
-#### 每日排程執行
-設定每天在指定時間執行資料同步：
 ```bash
-# 每天 09:00 執行
 # 每天 09:00 執行
 go run cmd/main.go -mode=schedule -time=09:00
 
 # 每天 14:30 執行
-# 每天 14:30 執行
 go run cmd/main.go -mode=schedule -time=14:30
 
-# 每天 23:00 執行
 # 每天 23:00 執行
 go run cmd/main.go -mode=schedule -time=23:00
 ```
 
 #### 編譯執行檔
 編譯程式為可執行檔案：
-#### 編譯執行檔
-編譯程式為可執行檔案：
 ```bash
 go build -o fetch-sketchfab cmd/main.go
 ```
-```
 
-- 單次執行：
-```bash
+
 - 單次執行：
 ```bash
 ./fetch-sketchfab -mode=once
 ```
-```
 
-- 排程執行：
-```bash
 - 排程執行：
 ```bash
 ./fetch-sketchfab -mode=schedule -time=09:00
@@ -182,7 +162,6 @@ docker-compose up -d fetch-sketchfab
 ```
 
 ### 排程執行
-### 排程執行
 ```
 ⏰ 啟動每日排程模式，執行時間: 09:00
 🕒 每日排程器已啟動，執行時間: 09:00
@@ -193,8 +172,6 @@ docker-compose up -d fetch-sketchfab
 
 ---
 
----
-
 ## 🛑 停止排程器
 
 在排程模式下，停止程式的方式：
@@ -202,8 +179,4 @@ docker-compose up -d fetch-sketchfab
 
 ---
 
-在排程模式下，停止程式的方式：
-- 按 `Ctrl+C` 中止執行。
-
----
 
